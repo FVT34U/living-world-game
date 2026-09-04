@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="GoapGoal" format=3 uid="uid://rj5b0di65hoa"]
+
+[ext_resource type="Script" uid="uid://bhy7m4qmt7j1q" path="res://addons/goap/goap_goal.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+goal_name = "wander"
+desired_state = {
+"at_landmark": true
+}
+priority = 1.0
+editor_graph_position = Vector2(-200, 440)

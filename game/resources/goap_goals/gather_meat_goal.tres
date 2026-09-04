@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="GoapGoal" format=3 uid="uid://dgpfq7arpifnc"]
+
+[ext_resource type="Script" uid="uid://bhy7m4qmt7j1q" path="res://addons/goap/goap_goal.gd" id="1"]
+[ext_resource type="Resource" path="res://game/resources/goap_resources/meat.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+goal_name = "gather_meat"
+target_resource = ExtResource("2")
+priority = 1.0
+editor_graph_position = Vector2(-280, 160)

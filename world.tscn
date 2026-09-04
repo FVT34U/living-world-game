@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://cra2lu81wv5jn"]
+
+[ext_resource type="Script" uid="uid://cawadnv36ytni" path="res://game/world_bootstrap.gd" id="1"]
+
+[node name="World" type="Node2D" unique_id=1143775806]
+script = ExtResource("1")
+NPC_COUNT = 7

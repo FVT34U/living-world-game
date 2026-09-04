@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ChopWoodAction" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://game/goap/actions/chop_wood_action.gd" id="1"]
+[ext_resource type="Resource" path="res://game/resources/goap_resources/wood.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+action_name = "chop_wood"
+cost = 1.0
+preconditions = {
+"at_woodpile": true
+}
+effects = {}
+produces_resource = ExtResource("2")
+chop_duration = 1.0
