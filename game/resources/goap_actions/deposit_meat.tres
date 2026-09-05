@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DepositResourceAction" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://game/goap/actions/deposit_resource_action.gd" id="1"]
+[ext_resource type="Resource" path="res://game/resources/goap_resources/meat.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+action_name = "deposit_meat"
+cost = 1.0
+preconditions = {
+"at_storage": true
+}
+effects = {}
+requires_resource = ExtResource("2")
+delivered_fact = "delivered_meat"

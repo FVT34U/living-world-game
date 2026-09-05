@@ -8,7 +8,7 @@ script = ExtResource("1")
 action_name = "hunt_boar"
 cost = 2.0
 preconditions = {
-"at_landmark": true
+"at_animal": true
 }
 effects = {}
 produces_resource = ExtResource("2")

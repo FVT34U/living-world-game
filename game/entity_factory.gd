@@ -1,70 +1,187 @@
 class_name EntityFactory
 extends RefCounted
 
-const WOOD_PRIORITY_COLOR := Color(0.85, 0.65, 0.2)
-const WANDER_PRIORITY_COLOR := Color(0.3, 0.55, 0.85)
+## Every entity in the demo - settlers, animals, plants, buildings - is
+## spawned through one of these functions, both from world_bootstrap.gd's
+## initial setup and from the dev panel (game/ui/dev_panel.gd), so there is
+## exactly one code path that creates a given kind of entity. Actions are
+## instantiate_for_agent()'d per entity (see addons/goap/README.md - loaded
+## Resources are shared/cached, and these carry runtime-mutable state);
+## goals are stateless here and safe to share directly.
 
-const MOVE_TO_WOODPILE_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_woodpile.tres")
-const MOVE_TO_LANDMARK_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_landmark.tres")
+const WOODCUTTER_COLOR := Color(0.85, 0.65, 0.2)
+const HUNTER_COLOR := Color(0.75, 0.25, 0.25)
+const BOAR_COLOR := Color(0.35, 0.25, 0.2)
+const DEER_COLOR := Color(0.8, 0.7, 0.5)
+const PLANT_COLOR := Color(0.25, 0.6, 0.3)
+const SAWMILL_COLOR := Color(0.55, 0.35, 0.15)
+const STORAGE_COLOR := Color(0.25, 0.45, 0.75)
+
+const STORAGE_CAPACITY := 30
+
+const MOVE_TO_SAWMILL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_sawmill.tres")
+const MOVE_TO_STORAGE_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage.tres")
+const MOVE_TO_ANIMAL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_animal.tres")
+const MOVE_TO_PLANT_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_plant.tres")
 const CHOP_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/chop_wood.tres")
 const HUNT_BOAR_ACTION: GoapAction = preload("res://game/resources/goap_actions/hunt_boar.tres")
 const HUNT_DEER_ACTION: GoapAction = preload("res://game/resources/goap_actions/hunt_deer.tres")
+const DEPOSIT_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/deposit_wood.tres")
+const DEPOSIT_MEAT_ACTION: GoapAction = preload("res://game/resources/goap_actions/deposit_meat.tres")
+const EAT_PLANT_ACTION: GoapAction = preload("res://game/resources/goap_actions/eat_plant.tres")
+const WANDER_ACTION: GoapAction = preload("res://game/resources/goap_actions/wander.tres")
 
-const PREPARE_FOR_WINTER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/prepare_for_winter_goal.tres")
-const FORAGE_ANYTHING_GOAL: GoapGoal = preload("res://game/resources/goap_goals/forage_anything_goal.tres")
+const DELIVER_WOOD_GOAL: GoapGoal = preload("res://game/resources/goap_goals/deliver_wood_goal.tres")
+const DELIVER_MEAT_GOAL: GoapGoal = preload("res://game/resources/goap_goals/deliver_meat_goal.tres")
+const HUNGER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/hunger_goal.tres")
 const WANDER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/wander_goal.tres")
 
-## Spawns one NPC entity: ECS components + a GoapAgent whose actions/goals are
-## duplicated from shared .tres templates (see addons/goap/README.md - loaded
-## Resources are cached/shared, so any per-agent mutation, including the
-## priority override below, needs its own copy). NPCs alternate between a
-## composite ALL goal (must gather both wood AND meat) and a composite ANY
-## goal (either resource will do) as their primary goal, so both AND/OR
-## composition modes are visible in the running demo.
-static func spawn_npc(world: ECSWorld, parent: Node2D, spawn_pos: Vector2, prioritize_composite: bool) -> int:
+## Woodcutters chop at the sawmill and deliver wood; hunters stalk animals
+## and deliver meat. Both fall back to wander_goal once their delivery goal
+## is invalid (storage full - see DeliverResourceGoal.is_valid()).
+static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: StringName) -> int:
 	var e := world.create_entity()
+	_add_movement(world, e, pos)
+	world.add_component(e, Game.INVENTORY_TYPE, InventoryComponent.new())
+	world.add_component(e, Game.AI_BLACKBOARD_TYPE, AiBlackboardComponent.new())
 
-	var pos_comp := PositionComponent.new()
-	pos_comp.pos = spawn_pos
-	world.add_component(e, Game.POSITION_TYPE, pos_comp)
-
-	world.add_component(e, Game.PATH_FOLLOW_TYPE, PathFollowComponent.new())
-
-	var primary_goal: GoapGoal = (PREPARE_FOR_WINTER_GOAL if prioritize_composite else FORAGE_ANYTHING_GOAL).duplicate(true)
-	var wander_goal: GoapGoal = WANDER_GOAL.duplicate(true)
-	primary_goal.priority = 2.0
-	wander_goal.priority = 1.0
+	var role_comp := SettlerRoleComponent.new()
+	role_comp.role = role
+	world.add_component(e, Game.SETTLER_ROLE_TYPE, role_comp)
 
 	var agent := GoapAgent.new()
-	agent.goals = [primary_goal, wander_goal]
-	agent.actions = [
-		MOVE_TO_WOODPILE_ACTION.instantiate_for_agent(),
-		CHOP_WOOD_ACTION.instantiate_for_agent(),
-		MOVE_TO_LANDMARK_ACTION.instantiate_for_agent(),
-		HUNT_BOAR_ACTION.instantiate_for_agent(),
-		HUNT_DEER_ACTION.instantiate_for_agent(),
-	]
+	var color: Color
+	if role == &"hunter":
+		agent.goals = [DELIVER_MEAT_GOAL, WANDER_GOAL]
+		agent.actions = [
+			MOVE_TO_ANIMAL_ACTION.instantiate_for_agent(),
+			HUNT_BOAR_ACTION.instantiate_for_agent(),
+			HUNT_DEER_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			DEPOSIT_MEAT_ACTION.instantiate_for_agent(),
+			WANDER_ACTION.instantiate_for_agent(),
+		]
+		color = HUNTER_COLOR
+	else:
+		agent.goals = [DELIVER_WOOD_GOAL, WANDER_GOAL]
+		agent.actions = [
+			MOVE_TO_SAWMILL_ACTION.instantiate_for_agent(),
+			CHOP_WOOD_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			DEPOSIT_WOOD_ACTION.instantiate_for_agent(),
+			WANDER_ACTION.instantiate_for_agent(),
+		]
+		color = WOODCUTTER_COLOR
 	agent.goal_recheck_interval = 1.0 + randf()
 
 	var goap_comp := GoapAgentComponent.new()
 	goap_comp.agent = agent
 	world.add_component(e, Game.GOAP_AGENT_TYPE, goap_comp)
 
+	_add_visual(world, parent, e, pos, _make_circle_texture(color, 8), true)
+	return e
+
+## Animals alternate between eating (once hungry enough and a plant exists -
+## see HungerGoal) and wandering the map at random.
+static func spawn_animal(world: ECSWorld, parent: Node2D, pos: Vector2, species: StringName) -> int:
+	var e := world.create_entity()
+	_add_movement(world, e, pos)
+	world.add_component(e, Game.AI_BLACKBOARD_TYPE, AiBlackboardComponent.new())
+
+	var animal := AnimalComponent.new()
+	animal.species = species
+	animal.meat_yield = 2 if species == &"boar" else 1
+	animal.hunger = randf() * 0.5
+	world.add_component(e, Game.ANIMAL_TYPE, animal)
+
+	var agent := GoapAgent.new()
+	agent.goals = [HUNGER_GOAL, WANDER_GOAL]
+	agent.actions = [
+		MOVE_TO_PLANT_ACTION.instantiate_for_agent(),
+		EAT_PLANT_ACTION.instantiate_for_agent(),
+		WANDER_ACTION.instantiate_for_agent(),
+	]
+	agent.goal_recheck_interval = 0.75 + randf() * 0.5
+
+	var goap_comp := GoapAgentComponent.new()
+	goap_comp.agent = agent
+	world.add_component(e, Game.GOAP_AGENT_TYPE, goap_comp)
+
+	var color := BOAR_COLOR if species == &"boar" else DEER_COLOR
+	_add_visual(world, parent, e, pos, _make_circle_texture(color, 7), true)
+	return e
+
+static func spawn_plant(world: ECSWorld, parent: Node2D, pos: Vector2) -> int:
+	var e := world.create_entity()
+	var pos_comp := PositionComponent.new()
+	pos_comp.pos = pos
+	world.add_component(e, Game.POSITION_TYPE, pos_comp)
+	world.add_component(e, Game.PLANT_TYPE, PlantComponent.new())
+
+	_add_visual(world, parent, e, pos, _make_circle_texture(PLANT_COLOR, 4), false)
+	return e
+
+## kind is &"sawmill" or &"storage"; only storage buildings get a
+## StorageComponent (and a live-updating stock label - see StorageLabelSystem).
+static func spawn_building(world: ECSWorld, parent: Node2D, pos: Vector2, kind: StringName) -> int:
+	var e := world.create_entity()
+	var pos_comp := PositionComponent.new()
+	pos_comp.pos = pos
+	world.add_component(e, Game.POSITION_TYPE, pos_comp)
+
+	var building := BuildingComponent.new()
+	building.kind = kind
+	world.add_component(e, Game.BUILDING_TYPE, building)
+
+	var color := SAWMILL_COLOR
+	if kind == &"storage":
+		var storage := StorageComponent.new()
+		storage.capacity = STORAGE_CAPACITY
+		world.add_component(e, Game.STORAGE_TYPE, storage)
+		color = STORAGE_COLOR
+
+	var node_ref := _add_visual(world, parent, e, pos, _make_square_texture(color, 22), true)
+	if kind != &"storage":
+		node_ref.label.text = "Sawmill"
+	return e
+
+static func _add_movement(world: ECSWorld, e: int, pos: Vector2) -> void:
+	var pos_comp := PositionComponent.new()
+	pos_comp.pos = pos
+	world.add_component(e, Game.POSITION_TYPE, pos_comp)
+	world.add_component(e, Game.PATH_FOLLOW_TYPE, PathFollowComponent.new())
+
+static func _add_visual(world: ECSWorld, parent: Node2D, e: int, pos: Vector2, texture: ImageTexture, with_label: bool) -> NodeRefComponent:
 	var visual := Sprite2D.new()
-	visual.texture = _make_circle_texture(WOOD_PRIORITY_COLOR if prioritize_composite else WANDER_PRIORITY_COLOR)
-	visual.global_position = spawn_pos
+	visual.texture = texture
+	visual.global_position = pos
 	parent.add_child(visual)
 
 	var node_ref := NodeRefComponent.new()
 	node_ref.node = visual
+	if with_label:
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 10)
+		label.position = Vector2(-30, -28)
+		label.custom_minimum_size = Vector2(60, 0)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		visual.add_child(label)
+		node_ref.label = label
+
 	world.add_component(e, Game.NODE_REF_TYPE, node_ref)
+	return node_ref
 
-	return e
+static func _make_circle_texture(color: Color, radius: int) -> ImageTexture:
+	var size := radius * 2
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var center := Vector2(radius - 0.5, radius - 0.5)
+	for y in size:
+		for x in size:
+			var d := Vector2(x, y).distance_to(center)
+			img.set_pixel(x, y, color if d <= radius - 0.5 else Color(0, 0, 0, 0))
+	return ImageTexture.create_from_image(img)
 
-static func _make_circle_texture(color: Color) -> ImageTexture:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	for y in 16:
-		for x in 16:
-			var d := Vector2(x - 7.5, y - 7.5).length()
-			img.set_pixel(x, y, color if d <= 7.5 else Color(0, 0, 0, 0))
+static func _make_square_texture(color: Color, size: int) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(color)
 	return ImageTexture.create_from_image(img)

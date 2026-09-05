@@ -8,7 +8,7 @@ script = ExtResource("1")
 action_name = "chop_wood"
 cost = 1.0
 preconditions = {
-"at_woodpile": true
+"at_sawmill": true
 }
 effects = {}
 produces_resource = ExtResource("2")

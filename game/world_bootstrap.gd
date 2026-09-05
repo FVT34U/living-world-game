@@ -1,18 +1,23 @@
 extends Node2D
 
 ## Attached to the World node in world.tscn. Wires the three independent
-## addons together for a small runnable demo: spawns NPCs that alternate
-## between a composite ALL goal ("prepare for winter": wood AND meat) and a
-## composite ANY goal ("forage anything": wood OR meat), falling back to
-## wandering, and walk to their targets via the pathfinding addon, driven by
-## ECS systems. All goals/actions are loaded from res://game/resources/.
+## addons together into a small living-settlement simulation: settlers
+## specialize as woodcutters (sawmill -> chop -> storage) or hunters
+## (stalk a boar/deer -> kill it -> storage), animals wander and eat plants,
+## and a storage building slowly consumes its own stock. All of it is driven
+## by the same generic addons/ecs + addons/goap + addons/pathfinding trio -
+## see docs/ARCHITECTURE.md for the full data-flow explanation. A dev panel
+## (F1, game/ui/dev_panel.gd) can spawn/remove any of it at runtime.
 
-@export var WOODPILE_MARKER_COLOR := Color(0.55, 0.35, 0.15)
-@export var LANDMARK_MARKER_COLOR := Color(0.2, 0.6, 0.3)
 @export var GRID_SIZE := 40
 @export var CELL_SIZE := Vector2(16, 16)
-@export var NPC_COUNT := 3
-@export var SPAWN_POS := Vector2(300, 300)
+@export var NPC_COUNT := 6
+@export var BOAR_COUNT := 3
+@export var DEER_COUNT := 3
+@export var PLANT_COUNT := 16
+@export var SPAWN_POS := Vector2(300, 340)
+@export var STORAGE_POS := Vector2(300, 80)
+@export var SAWMILL_POS := Vector2(540, 140)
 
 func _ready() -> void:
 	var world := ECSWorld.new()
@@ -23,6 +28,13 @@ func _ready() -> void:
 	Game.PATH_FOLLOW_TYPE = world.register_component(PathFollowComponent)
 	Game.GOAP_AGENT_TYPE = world.register_component(GoapAgentComponent)
 	Game.NODE_REF_TYPE = world.register_component(NodeRefComponent)
+	Game.INVENTORY_TYPE = world.register_component(InventoryComponent)
+	Game.ANIMAL_TYPE = world.register_component(AnimalComponent)
+	Game.PLANT_TYPE = world.register_component(PlantComponent)
+	Game.BUILDING_TYPE = world.register_component(BuildingComponent)
+	Game.STORAGE_TYPE = world.register_component(StorageComponent)
+	Game.AI_BLACKBOARD_TYPE = world.register_component(AiBlackboardComponent)
+	Game.SETTLER_ROLE_TYPE = world.register_component(SettlerRoleComponent)
 
 	var provider := Grid2DPathfinder.new()
 	provider.setup({
@@ -30,8 +42,8 @@ func _ready() -> void:
 		"cell_size": CELL_SIZE,
 		"diagonal_mode": AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES,
 	})
-	# A short wall between the spawn point and the targets so the demo
-	# visibly exercises pathfinding around an obstacle, not just a straight line.
+	# A short wall so the demo visibly exercises pathfinding around an
+	# obstacle, not just straight lines.
 	for cy in range(10, 20):
 		provider.set_obstacle(Vector2i(20, cy), true)
 
@@ -40,19 +52,35 @@ func _ready() -> void:
 	add_child(service)
 	Game.pathfinding_service = service
 
+	world.add_system(AnimalNeedsSystem.new())
 	world.add_system(GoapPlanningSystem.new())
 	world.add_system(PathFollowSystem.new())
+	world.add_system(PlantRegrowSystem.new())
+	world.add_system(StorageConsumptionSystem.new())
 	world.add_system(RenderSyncSystem.new())
+	world.add_system(StatusLabelSystem.new())
+	world.add_system(StorageLabelSystem.new())
 
-	_spawn_marker(Game.WOODPILE_POS, WOODPILE_MARKER_COLOR)
-	_spawn_marker(Game.LANDMARK_POS, LANDMARK_MARKER_COLOR)
+	EntityFactory.spawn_building(world, self, SAWMILL_POS, &"sawmill")
+	EntityFactory.spawn_building(world, self, STORAGE_POS, &"storage")
+
+	for i in PLANT_COUNT:
+		EntityFactory.spawn_plant(world, self, _random_point())
+	for i in BOAR_COUNT:
+		EntityFactory.spawn_animal(world, self, _random_point(), &"boar")
+	for i in DEER_COUNT:
+		EntityFactory.spawn_animal(world, self, _random_point(), &"deer")
 
 	for i in NPC_COUNT:
-		EntityFactory.spawn_npc(world, self, SPAWN_POS + Vector2(i * 24, 0), i % 2 == 0)
+		var role: StringName = &"woodcutter" if i % 2 == 0 else &"hunter"
+		EntityFactory.spawn_settler(world, self, SPAWN_POS + Vector2(i * 20, 0), role)
 
-func _spawn_marker(pos: Vector2, color: Color) -> void:
-	var marker := ColorRect.new()
-	marker.size = Vector2(20, 20)
-	marker.position = pos - marker.size / 2.0
-	marker.color = color
-	add_child(marker)
+	var dev_panel := DevPanel.new()
+	add_child(dev_panel)
+	dev_panel.setup(world, self)
+
+func _random_point() -> Vector2:
+	return Vector2(
+		randf_range(40, GRID_SIZE * CELL_SIZE.x - 40),
+		randf_range(40, GRID_SIZE * CELL_SIZE.y - 40)
+	)
