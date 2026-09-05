@@ -5,9 +5,9 @@ extends GoapAction
 ## MoveToNearestAction(target_tag=&"plant") into
 ## AiBlackboardComponent.target_entity: marks it inert (PlantComponent.alive
 ## = false, regrow_timer started - see PlantRegrowSystem) and hides its
-## visual, then resets the eater's own AnimalComponent.hunger. Configured via
-## eat_plant.tres (precondition "at_plant": true, matching
-## move_to_plant.tres's target_fact).
+## visual, then refills the eater's own Satiety attribute (addons/attributes)
+## to full. Configured via eat_plant.tres (precondition "at_plant": true,
+## matching move_to_plant.tres's target_fact).
 
 @export var eat_duration: float = 0.6
 @export var regrow_time: float = 12.0
@@ -39,7 +39,7 @@ func perform(agent_owner: Variant, delta: float) -> int:
 		if is_instance_valid(plant_node_ref.node):
 			plant_node_ref.node.visible = false
 
-	if world.has_component(agent_owner, Game.ANIMAL_TYPE):
-		var animal: AnimalComponent = world.get_component(agent_owner, Game.ANIMAL_TYPE)
-		animal.hunger = 0.0
+	if world.has_component(agent_owner, Game.ATTRIBUTES_TYPE):
+		var attrs: AttributeSet = world.get_component(agent_owner, Game.ATTRIBUTES_TYPE)
+		attrs.set_value(Game.SATIETY_ATTR, Game.SATIETY_ATTR.max_value)
 	return Status.SUCCESS

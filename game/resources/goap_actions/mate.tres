@@ -17,3 +17,4 @@ cooldown = 25.0
 offspring_maturation = 20.0
 twin_chance = 0.15
 spawn_scatter = 24.0
+energy_cost = 10.0

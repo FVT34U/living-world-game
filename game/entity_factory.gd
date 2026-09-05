@@ -53,6 +53,7 @@ const WANDER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/wander_go
 static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: StringName) -> int:
 	var e := world.create_entity()
 	_add_movement(world, e, pos)
+	_add_attributes(world, e)
 	world.add_component(e, Game.INVENTORY_TYPE, InventoryComponent.new())
 	world.add_component(e, Game.AI_BLACKBOARD_TYPE, AiBlackboardComponent.new())
 
@@ -99,12 +100,12 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 static func spawn_animal(world: ECSWorld, parent: Node2D, pos: Vector2, species: StringName) -> int:
 	var e := world.create_entity()
 	_add_movement(world, e, pos)
+	_add_attributes(world, e)
 	world.add_component(e, Game.AI_BLACKBOARD_TYPE, AiBlackboardComponent.new())
 
 	var animal := AnimalComponent.new()
 	animal.species = species
 	animal.meat_yield = 2 if species == &"boar" else 1
-	animal.hunger = randf() * 0.5
 	animal.mate_cooldown = randf() * 5.0
 	world.add_component(e, Game.ANIMAL_TYPE, animal)
 
@@ -166,6 +167,21 @@ static func _add_movement(world: ECSWorld, e: int, pos: Vector2) -> void:
 	pos_comp.pos = pos
 	world.add_component(e, Game.POSITION_TYPE, pos_comp)
 	world.add_component(e, Game.PATH_FOLLOW_TYPE, PathFollowComponent.new())
+
+## Registers every settler/animal with the full addons/attributes set (see
+## game/systems/attribute_consequence_system.gd for what happens to each
+## one). Satiety/Energy/Happiness/Age start jittered rather than pinned to
+## their type's default so a freshly spawned batch doesn't get hungry, tired,
+## or old in perfect lockstep - the same reasoning as GoapAgent.goal_recheck_interval's
+## own random jitter elsewhere in this file.
+static func _add_attributes(world: ECSWorld, e: int) -> void:
+	var attrs := AttributeSet.new()
+	attrs.register(Game.SATIETY_ATTR, 70.0 + randf() * 30.0)
+	attrs.register(Game.ENERGY_ATTR, 80.0 + randf() * 20.0)
+	attrs.register(Game.HEALTH_ATTR)
+	attrs.register(Game.HAPPINESS_ATTR, 60.0 + randf() * 20.0)
+	attrs.register(Game.AGE_ATTR, randf() * 20.0)
+	world.add_component(e, Game.ATTRIBUTES_TYPE, attrs)
 
 static func _add_visual(world: ECSWorld, parent: Node2D, e: int, pos: Vector2, texture: ImageTexture, with_label: bool) -> NodeRefComponent:
 	var visual := Sprite2D.new()

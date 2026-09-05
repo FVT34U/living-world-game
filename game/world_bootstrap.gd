@@ -1,13 +1,17 @@
 extends Node2D
 
-## Attached to the World node in world.tscn. Wires the three independent
+## Attached to the World node in world.tscn. Wires the four independent
 ## addons together into a small living-settlement simulation: settlers
 ## specialize as woodcutters (sawmill -> chop -> storage) or hunters
-## (stalk a boar/deer -> kill it -> storage), animals wander and eat plants,
-## and a storage building slowly consumes its own stock. All of it is driven
-## by the same generic addons/ecs + addons/goap + addons/pathfinding trio -
-## see docs/ARCHITECTURE.md for the full data-flow explanation. A dev panel
-## (F1, game/ui/dev_panel.gd) can spawn/remove any of it at runtime.
+## (stalk a boar/deer -> kill it -> storage), animals wander, eat plants, and
+## mate, a storage building slowly consumes its own stock, and every settler
+## and animal carries a generic AttributeSet (Satiety/Energy/Health/
+## Happiness/Age - see game/systems/attribute_consequence_system.gd) whose
+## consequences include starving/exhausting/aging to death. All of it is
+## driven by the same generic addons/ecs + addons/goap + addons/pathfinding +
+## addons/attributes quartet - see docs/ARCHITECTURE.md for the full
+## data-flow explanation. A dev panel (F1, game/ui/dev_panel.gd) can
+## spawn/remove any of it at runtime.
 
 @export var GRID_SIZE := 40
 @export var CELL_SIZE := Vector2(16, 16)
@@ -36,6 +40,9 @@ func _ready() -> void:
 	Game.STORAGE_TYPE = world.register_component(StorageComponent)
 	Game.AI_BLACKBOARD_TYPE = world.register_component(AiBlackboardComponent)
 	Game.SETTLER_ROLE_TYPE = world.register_component(SettlerRoleComponent)
+	# AttributeSet (addons/attributes) needs no game-specific wrapper to work
+	# as an ECS component - it's already a plain RefCounted class.
+	Game.ATTRIBUTES_TYPE = world.register_component(AttributeSet)
 
 	var provider := Grid2DPathfinder.new()
 	provider.setup({
@@ -54,6 +61,7 @@ func _ready() -> void:
 	Game.pathfinding_service = service
 
 	world.add_system(AnimalNeedsSystem.new())
+	world.add_system(AttributeConsequenceSystem.new())
 	world.add_system(GoapPlanningSystem.new())
 	world.add_system(PathFollowSystem.new())
 	world.add_system(PlantRegrowSystem.new())

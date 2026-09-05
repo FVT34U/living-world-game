@@ -13,3 +13,4 @@ preconditions = {
 effects = {}
 produces_resource = ExtResource("2")
 chop_duration = 1.0
+energy_cost = 8.0
