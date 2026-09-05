@@ -22,3 +22,5 @@ func update(world: ECSWorld, delta: float) -> void:
 		a.hunger = minf(a.hunger + HUNGER_RATE * delta, 2.0)
 		if a.mate_cooldown > 0.0:
 			a.mate_cooldown = maxf(a.mate_cooldown - delta, 0.0)
+			if a.mate_cooldown <= 0.0:
+				a.is_juvenile = false

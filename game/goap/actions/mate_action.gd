@@ -65,7 +65,9 @@ func perform(agent_owner: Variant, delta: float) -> int:
 	for i in litter:
 		var offset := Vector2(randf_range(-spawn_scatter, spawn_scatter), randf_range(-spawn_scatter, spawn_scatter))
 		var child := EntityFactory.spawn_animal(world, Game.world_root, spawn_center + offset, self_animal.species)
-		(world.get_component(child, Game.ANIMAL_TYPE) as AnimalComponent).mate_cooldown = offspring_maturation
+		var child_animal := world.get_component(child, Game.ANIMAL_TYPE) as AnimalComponent
+		child_animal.mate_cooldown = offspring_maturation
+		child_animal.is_juvenile = true
 
 	return Status.SUCCESS
 

@@ -46,11 +46,6 @@ func tick(agent_owner: Variant, state: GoapWorldState, delta: float) -> void:
 
 	var action: GoapAction = current_plan[current_action_index]
 	if not action.is_ready(agent_owner) or not state.matches(action.get_preconditions(agent_owner, state)):
-		# Symmetric with the SUCCESS/FAILED branches below: whatever start()
-		# set up (a locked target, a pending request, ...) must be torn down
-		# whenever this action stops being current, including this early
-		# abandon-and-replan path, not just a clean finish.
-		action.stop(agent_owner)
 		_replan(agent_owner, state)
 		return
 
@@ -70,12 +65,23 @@ func tick(agent_owner: Variant, state: GoapWorldState, delta: float) -> void:
 				# non-first plan steps.
 				current_plan[current_action_index].start(agent_owner)
 		GoapAction.Status.FAILED:
-			action.stop(agent_owner)
 			_replan(agent_owner, state)
 		GoapAction.Status.RUNNING:
 			pass
 
+## Clears the current plan and searches for a new one for `current_goal`.
+## Called from every path that abandons a plan before it finishes on its
+## own (a changed goal, a failed action, a precondition that stopped
+## matching) - including the goal-recheck at the top of tick(), which can
+## fire while an action is still RUNNING. Always calls stop() on whatever
+## action was still current first, so an action's start()/stop() pair stays
+## a reliable place for setup/teardown (e.g. locking an external resource
+## for the action's duration) no matter which of those paths ends it -
+## forgetting this here previously left a locked target stuck forever
+## whenever a plan was abandoned this way instead of finishing cleanly.
 func _replan(agent_owner: Variant, state: GoapWorldState) -> void:
+	if current_action_index >= 0 and current_action_index < current_plan.size():
+		current_plan[current_action_index].stop(agent_owner)
 	current_plan.clear()
 	current_action_index = -1
 	if current_goal == null:

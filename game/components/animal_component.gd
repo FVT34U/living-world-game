@@ -19,3 +19,9 @@ var hunger: float = 0.0
 ## successful MateAction, and to a longer "maturation" delay on a newborn
 ## (see MateAction) so population growth stays gradual.
 var mate_cooldown: float = 0.0
+
+## True for a newborn (see MateAction) until its mate_cooldown maturation
+## delay runs out (see AnimalNeedsSystem) - off-limits to hunting in the
+## meantime (see Game.is_animal_protected()), unlike an adult merely on its
+## own post-mating cooldown.
+var is_juvenile: bool = false
