@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="MoveToNearestAction" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="MoveToNearestAction" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://game/goap/actions/move_to_nearest_action.gd" id="1"]
+[ext_resource type="Resource" path="res://game/resources/goap_resources/meat.tres" id="2"]
 
 [resource]
 script = ExtResource("1")
@@ -8,5 +9,6 @@ action_name = "move_to_storage"
 cost = 1.0
 preconditions = {}
 effects = {}
+requires_resource = ExtResource("2")
 target_tag = &"storage"
 target_fact = "at_storage"

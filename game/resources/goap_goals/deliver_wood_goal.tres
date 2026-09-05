@@ -7,3 +7,4 @@ script = ExtResource("1")
 goal_name = "deliver_wood"
 priority = 2.0
 delivered_fact = "delivered_wood"
+requires_tag = &"sawmill"

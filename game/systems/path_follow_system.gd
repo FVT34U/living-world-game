@@ -15,7 +15,7 @@ func update(world: ECSWorld, delta: float) -> void:
 	for e in _buf:
 		var pos: PositionComponent = world.get_component(e, Game.POSITION_TYPE)
 		var pf: PathFollowComponent = world.get_component(e, Game.PATH_FOLLOW_TYPE)
-		if pf.arrived or pf.path.is_empty() or pf.path_index >= pf.path.size():
+		if pf.locked or pf.arrived or pf.path.is_empty() or pf.path_index >= pf.path.size():
 			continue
 		var target: Vector2 = pf.path[pf.path_index]
 		var to_target := target - pos.pos

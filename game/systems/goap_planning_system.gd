@@ -23,8 +23,14 @@ func update(world: ECSWorld, delta: float) -> void:
 	var processed := 0
 	while processed < MAX_PLANNING_TICKS_PER_FRAME and processed < n:
 		var e: int = _buf[_cursor % n]
+		_cursor += 1
+		processed += 1
+		# An earlier agent processed this same frame (e.g. a hunter's
+		# HuntAction) may have already despawned this entity - _buf was
+		# snapshotted once at the top of this function, so it can still
+		# name an id that's gone by the time its round-robin turn comes up.
+		if not world.has_component(e, Game.GOAP_AGENT_TYPE):
+			continue
 		var comp: GoapAgentComponent = world.get_component(e, Game.GOAP_AGENT_TYPE)
 		var state := Game.build_world_state(world, e)
 		comp.agent.tick(e, state, delta)
-		_cursor += 1
-		processed += 1

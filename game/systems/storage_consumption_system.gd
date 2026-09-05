@@ -4,10 +4,13 @@ extends System
 ## Slowly drains every StorageComponent so stockpiles don't just grow forever
 ## - a stand-in for "the settlement eats/burns what's gathered" without
 ## modeling individual settlers' meals. The drain rate scales with the
-## settler population so a bigger settlement visibly consumes faster.
+## settler population (gently - one settler eats a quarter of a unit per
+## tick, rounded up, not a whole unit each) so a bigger settlement visibly
+## consumes faster without outpacing what a handful of woodcutters/hunters
+## can actually gather.
 
-const CONSUME_INTERVAL := 4.0  # seconds between consumption ticks
-const AMOUNT_PER_SETTLER := 1
+const CONSUME_INTERVAL := 6.0  # seconds between consumption ticks
+const SETTLERS_PER_UNIT := 4
 
 var _timer: float = 0.0
 var _settler_buf: Array[int] = []
@@ -23,10 +26,10 @@ func update(world: ECSWorld, delta: float) -> void:
 	_timer = 0.0
 
 	world.query_into([Game.SETTLER_ROLE_TYPE], _settler_buf)
-	var settlers := maxi(_settler_buf.size(), 1)
+	var amount := maxi(1, ceili(float(_settler_buf.size()) / SETTLERS_PER_UNIT))
 
 	world.query_into([Game.STORAGE_TYPE], _storage_buf)
 	for e in _storage_buf:
 		var s: StorageComponent = world.get_component(e, Game.STORAGE_TYPE)
-		s.consume(Game.WOOD_RESOURCE.id, settlers * AMOUNT_PER_SETTLER)
-		s.consume(Game.MEAT_RESOURCE.id, settlers * AMOUNT_PER_SETTLER)
+		s.consume(Game.WOOD_RESOURCE.id, amount)
+		s.consume(Game.MEAT_RESOURCE.id, amount)

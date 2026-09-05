@@ -1,3 +1,15 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Auto-generated resource UID sidecar files - Godot recreates these on its
+# own whenever it opens the project and finds one missing, so tracking them
+# just produces noise (new/modified .uid on every pull) for no benefit here.
+*.uid
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp

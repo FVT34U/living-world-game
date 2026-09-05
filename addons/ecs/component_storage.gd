@@ -17,7 +17,16 @@ var sparse: Array[int] = []
 func has(entity: int) -> bool:
 	return entity < sparse.size() and sparse[entity] != -1
 
+## Returns null (and logs an error) instead of the component if `entity`
+## doesn't have one, rather than indexing dense_components with the raw
+## sparse[entity] value: Godot Arrays support negative indices (wrapping
+## from the end), so an unchecked lookup for an entity missing this
+## component - sparse[entity] == -1 - would silently return an unrelated
+## entity's component instead of failing loudly.
 func get_comp(entity: int) -> Object:
+	if not has(entity):
+		push_error("ComponentStorage.get_comp: entity %d has no component of this type" % entity)
+		return null
 	return dense_components[sparse[entity]]
 
 func add(entity: int, component: Object) -> void:

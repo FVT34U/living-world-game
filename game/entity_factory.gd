@@ -20,7 +20,8 @@ const STORAGE_COLOR := Color(0.25, 0.45, 0.75)
 const STORAGE_CAPACITY := 30
 
 const MOVE_TO_SAWMILL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_sawmill.tres")
-const MOVE_TO_STORAGE_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage.tres")
+const MOVE_TO_STORAGE_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage_wood.tres")
+const MOVE_TO_STORAGE_MEAT_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage_meat.tres")
 const MOVE_TO_ANIMAL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_animal.tres")
 const MOVE_TO_PLANT_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_plant.tres")
 const CHOP_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/chop_wood.tres")
@@ -29,16 +30,26 @@ const HUNT_DEER_ACTION: GoapAction = preload("res://game/resources/goap_actions/
 const DEPOSIT_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/deposit_wood.tres")
 const DEPOSIT_MEAT_ACTION: GoapAction = preload("res://game/resources/goap_actions/deposit_meat.tres")
 const EAT_PLANT_ACTION: GoapAction = preload("res://game/resources/goap_actions/eat_plant.tres")
+const MOVE_TO_MATE_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_mate.tres")
+const MATE_ACTION: GoapAction = preload("res://game/resources/goap_actions/mate.tres")
 const WANDER_ACTION: GoapAction = preload("res://game/resources/goap_actions/wander.tres")
 
 const DELIVER_WOOD_GOAL: GoapGoal = preload("res://game/resources/goap_goals/deliver_wood_goal.tres")
 const DELIVER_MEAT_GOAL: GoapGoal = preload("res://game/resources/goap_goals/deliver_meat_goal.tres")
 const HUNGER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/hunger_goal.tres")
+const MATE_GOAL: GoapGoal = preload("res://game/resources/goap_goals/mate_goal.tres")
 const WANDER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/wander_goal.tres")
 
 ## Woodcutters chop at the sawmill and deliver wood; hunters stalk animals
 ## and deliver meat. Both fall back to wander_goal once their delivery goal
 ## is invalid (storage full - see DeliverResourceGoal.is_valid()).
+##
+## move_to_storage_wood.tres/move_to_storage_meat.tres set requires_resource
+## (folded into their preconditions automatically by the base GoapAction) so
+## the planner can only route through them once the matching resource is
+## already in hand - without that, an empty-precondition "walk to storage"
+## action is free to slot in *anywhere* in the plan, including before
+## chopping/hunting, since nothing else constrains its position.
 static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: StringName) -> int:
 	var e := world.create_entity()
 	_add_movement(world, e, pos)
@@ -57,7 +68,7 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 			MOVE_TO_ANIMAL_ACTION.instantiate_for_agent(),
 			HUNT_BOAR_ACTION.instantiate_for_agent(),
 			HUNT_DEER_ACTION.instantiate_for_agent(),
-			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_MEAT_ACTION.instantiate_for_agent(),
 			DEPOSIT_MEAT_ACTION.instantiate_for_agent(),
 			WANDER_ACTION.instantiate_for_agent(),
 		]
@@ -67,7 +78,7 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 		agent.actions = [
 			MOVE_TO_SAWMILL_ACTION.instantiate_for_agent(),
 			CHOP_WOOD_ACTION.instantiate_for_agent(),
-			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_WOOD_ACTION.instantiate_for_agent(),
 			DEPOSIT_WOOD_ACTION.instantiate_for_agent(),
 			WANDER_ACTION.instantiate_for_agent(),
 		]
@@ -81,8 +92,10 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 	_add_visual(world, parent, e, pos, _make_circle_texture(color, 8), true)
 	return e
 
-## Animals alternate between eating (once hungry enough and a plant exists -
-## see HungerGoal) and wandering the map at random.
+## Animals cycle between eating (once hungry enough and a plant exists - see
+## HungerGoal), mating (once well-fed, off cooldown, and a same-species
+## partner exists - see MateGoal/game/goap/actions/mate_action.gd), and
+## wandering the map at random.
 static func spawn_animal(world: ECSWorld, parent: Node2D, pos: Vector2, species: StringName) -> int:
 	var e := world.create_entity()
 	_add_movement(world, e, pos)
@@ -92,13 +105,16 @@ static func spawn_animal(world: ECSWorld, parent: Node2D, pos: Vector2, species:
 	animal.species = species
 	animal.meat_yield = 2 if species == &"boar" else 1
 	animal.hunger = randf() * 0.5
+	animal.mate_cooldown = randf() * 5.0
 	world.add_component(e, Game.ANIMAL_TYPE, animal)
 
 	var agent := GoapAgent.new()
-	agent.goals = [HUNGER_GOAL, WANDER_GOAL]
+	agent.goals = [HUNGER_GOAL, MATE_GOAL, WANDER_GOAL]
 	agent.actions = [
 		MOVE_TO_PLANT_ACTION.instantiate_for_agent(),
 		EAT_PLANT_ACTION.instantiate_for_agent(),
+		MOVE_TO_MATE_ACTION.instantiate_for_agent(),
+		MATE_ACTION.instantiate_for_agent(),
 		WANDER_ACTION.instantiate_for_agent(),
 	]
 	agent.goal_recheck_interval = 0.75 + randf() * 0.5

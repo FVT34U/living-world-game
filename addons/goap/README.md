@@ -18,11 +18,11 @@ Goal-Oriented Action Planning for Godot 4 (GDScript): actions, goals, a forward 
 - **GoapGoal**: `extends Resource`. `desired_state` (flexible dict) + `target_resource` (abstraction convenience) + `priority`. Create it directly via "New Resource" in the FileSystem dock, or through the Goal Graph Editor.
 - **GoapCompositeGoal**: `extends GoapGoal`. Combines several `sub_goals` as `ALL` (AND - ship needs every sub-goal satisfied at once, e.g. "prepare for winter" = wood AND meat) or `ANY` (OR - any one sub-goal satisfies it, e.g. "forage anything" = wood OR meat). Sub-goals can themselves be composite, so goal trees nest freely.
 - **GoapPlanner**: static `plan(agent_owner, start_state, goal, actions) -> Array[GoapAction]`. Forward A* search, bounded by `MAX_EXPANSIONS`. For a composite goal it searches once per alternative the goal resolves into and keeps the cheapest successful plan.
-- **GoapAgent**: owns an agent's goals/actions/current plan; call `tick(agent_owner, state, delta)` once per update to drive goal selection, planning, and execution.
+- **GoapAgent**: owns an agent's goals/actions/current plan; call `tick(agent_owner, state, delta)` once per update to drive goal selection, planning, and execution. `start()` is called exactly once on whichever action just became current (the first action of a fresh plan, and every action advanced into afterward), and `stop()` is always called on an action before it stops being current - on a clean finish, on failure, and on an early abandon-and-replan alike - so an action's `start()`/`stop()` pair is a safe place for setup/teardown that must happen exactly once per activation (e.g. locking an external resource for the action's duration).
 
 ## ⚠️ Shared Resources need per-agent duplication
 
-A `.tres` loaded via `load()`/`preload()` is a **single cached object shared by every reference to that path**. `GoapAction` subclasses commonly carry runtime-mutable state (a "requested" flag, an elapsed timer - see `MoveToAction`/`ChopWoodAction` in this project's `game/` layer). If you hand that same loaded instance to two agents, they will corrupt each other's execution state.
+A `.tres` loaded via `load()`/`preload()` is a **single cached object shared by every reference to that path**. `GoapAction` subclasses commonly carry runtime-mutable state (a "requested" flag, an elapsed timer - see `MoveToNearestAction`/`ChopWoodAction` in this project's `game/` layer). If you hand that same loaded instance to two agents, they will corrupt each other's execution state.
 
 **Always duplicate a template before handing it to an agent:**
 ```gdscript
@@ -101,4 +101,4 @@ Enabling the plugin adds a **Goal Graph** panel at the bottom of the editor. Cli
 
 ## Integrating with ECS / Pathfinding
 
-This addon does not know either exists. The integration pattern used in this project: a `GoapAction` subclass living in `res://game/goap/actions/` reads/writes ECS components via a shared world reference, and calls into the pathfinding addon's `PathfindingService`. See `game/goap/actions/move_to_action.gd`.
+This addon does not know either exists. The integration pattern used in this project: a `GoapAction` subclass living in `res://game/goap/actions/` reads/writes ECS components via a shared world reference, and calls into the pathfinding addon's `PathfindingService`. See `game/goap/actions/move_to_nearest_action.gd`.
