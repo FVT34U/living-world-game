@@ -46,6 +46,11 @@ func tick(agent_owner: Variant, state: GoapWorldState, delta: float) -> void:
 
 	var action: GoapAction = current_plan[current_action_index]
 	if not action.is_ready(agent_owner) or not state.matches(action.get_preconditions(agent_owner, state)):
+		# Symmetric with the SUCCESS/FAILED branches below: whatever start()
+		# set up (a locked target, a pending request, ...) must be torn down
+		# whenever this action stops being current, including this early
+		# abandon-and-replan path, not just a clean finish.
+		action.stop(agent_owner)
 		_replan(agent_owner, state)
 		return
 
@@ -57,6 +62,13 @@ func tick(agent_owner: Variant, state: GoapWorldState, delta: float) -> void:
 			if current_action_index >= current_plan.size():
 				current_plan.clear()
 				current_action_index = -1
+			else:
+				# Every action becomes "current" through this same lifecycle
+				# step - index 0 via _replan() below, every later index via
+				# this advance - so start() is always called exactly once
+				# when an action becomes current, never skipped for
+				# non-first plan steps.
+				current_plan[current_action_index].start(agent_owner)
 		GoapAction.Status.FAILED:
 			action.stop(agent_owner)
 			_replan(agent_owner, state)

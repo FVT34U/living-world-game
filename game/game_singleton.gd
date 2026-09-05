@@ -61,15 +61,33 @@ func get_entity_position(world: ECSWorld, entity: int) -> Vector2:
 		return Vector2.INF
 	return (world.get_component(entity, POSITION_TYPE) as PositionComponent).pos
 
-## True while `entity` still exists and, for tags whose targets can go inert
-## without being destroyed (a plant that's been eaten and is regrowing),
-## still counts as usable.
+## True while `entity` still exists, still actually carries the component
+## that makes it a `tag`, and, for tags whose targets can go inert without
+## being destroyed (a plant that's been eaten and is regrowing), still
+## counts as usable.
+##
+## Checking the component, not just is_alive(), matters because ECSWorld
+## recycles entity ids: a stale AiBlackboardComponent.target_entity left
+## over from a dead animal can later be reassigned to a completely
+## different entity (a plant, a storage, ...). Without this check that
+## coincidence would read as "still a valid animal" and hand callers
+## (HuntAction, DepositResourceAction, ...) the wrong component - or, since
+## ComponentStorage.get_comp() indexes its dense array without bounds
+## checking, an *unrelated* entity's component when the type-storage lookup
+## itself is missing.
 func is_valid_target(world: ECSWorld, entity: int, tag: StringName) -> bool:
 	if entity == -1 or not world.is_alive(entity):
 		return false
-	if tag == &"plant":
-		return (world.get_component(entity, PLANT_TYPE) as PlantComponent).alive
-	return true
+	match tag:
+		&"sawmill":
+			return world.has_component(entity, BUILDING_TYPE) and (world.get_component(entity, BUILDING_TYPE) as BuildingComponent).kind == &"sawmill"
+		&"storage":
+			return world.has_component(entity, STORAGE_TYPE)
+		&"animal":
+			return world.has_component(entity, ANIMAL_TYPE)
+		&"plant":
+			return world.has_component(entity, PLANT_TYPE) and (world.get_component(entity, PLANT_TYPE) as PlantComponent).alive
+	return false
 
 ## Finds the closest entity matching `tag` to `from_pos`, or -1 if none
 ## exists. Called both by MoveToNearestAction (during planning validity

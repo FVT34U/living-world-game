@@ -58,7 +58,8 @@ world.add_component(e, pos_type, PositionComponent.new())
 - Component types are registered once at setup to get an `int` type-id; every runtime lookup uses that int, never a string.
 - `query_into()` fills a buffer array you own and reuse across frames instead of allocating a new Array every call — always pass the same `Array[int]` member variable from your system.
 - Component storage is a sparse set: O(1) add/remove/lookup, and iteration walks a densely packed array (no gaps to skip).
-- Entities use a free-list, no generation/handle-safety packing yet (see Roadmap).
+- `get_component()` on an entity that doesn't have that component type logs an error and returns `null` rather than reading past the end of its backing array - always guard with `has_component()` (or a `query_into()` that already includes the type) before calling it on an entity you haven't just created.
+- Entities use a free-list, no generation/handle-safety packing yet (see Roadmap). A held entity id can be silently reassigned to an unrelated entity after the original is destroyed - if you cache one across frames (a "current target" on a component, say), re-validate both `is_alive()` *and* that it still has the component type you expect before trusting it, not just `is_alive()` alone.
 
 ## Roadmap / not included in phase 1
 

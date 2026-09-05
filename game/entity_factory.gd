@@ -20,7 +20,8 @@ const STORAGE_COLOR := Color(0.25, 0.45, 0.75)
 const STORAGE_CAPACITY := 30
 
 const MOVE_TO_SAWMILL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_sawmill.tres")
-const MOVE_TO_STORAGE_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage.tres")
+const MOVE_TO_STORAGE_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage_wood.tres")
+const MOVE_TO_STORAGE_MEAT_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_storage_meat.tres")
 const MOVE_TO_ANIMAL_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_animal.tres")
 const MOVE_TO_PLANT_ACTION: GoapAction = preload("res://game/resources/goap_actions/move_to_plant.tres")
 const CHOP_WOOD_ACTION: GoapAction = preload("res://game/resources/goap_actions/chop_wood.tres")
@@ -39,6 +40,13 @@ const WANDER_GOAL: GoapGoal = preload("res://game/resources/goap_goals/wander_go
 ## Woodcutters chop at the sawmill and deliver wood; hunters stalk animals
 ## and deliver meat. Both fall back to wander_goal once their delivery goal
 ## is invalid (storage full - see DeliverResourceGoal.is_valid()).
+##
+## move_to_storage_wood.tres/move_to_storage_meat.tres set requires_resource
+## (folded into their preconditions automatically by the base GoapAction) so
+## the planner can only route through them once the matching resource is
+## already in hand - without that, an empty-precondition "walk to storage"
+## action is free to slot in *anywhere* in the plan, including before
+## chopping/hunting, since nothing else constrains its position.
 static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: StringName) -> int:
 	var e := world.create_entity()
 	_add_movement(world, e, pos)
@@ -57,7 +65,7 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 			MOVE_TO_ANIMAL_ACTION.instantiate_for_agent(),
 			HUNT_BOAR_ACTION.instantiate_for_agent(),
 			HUNT_DEER_ACTION.instantiate_for_agent(),
-			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_MEAT_ACTION.instantiate_for_agent(),
 			DEPOSIT_MEAT_ACTION.instantiate_for_agent(),
 			WANDER_ACTION.instantiate_for_agent(),
 		]
@@ -67,7 +75,7 @@ static func spawn_settler(world: ECSWorld, parent: Node2D, pos: Vector2, role: S
 		agent.actions = [
 			MOVE_TO_SAWMILL_ACTION.instantiate_for_agent(),
 			CHOP_WOOD_ACTION.instantiate_for_agent(),
-			MOVE_TO_STORAGE_ACTION.instantiate_for_agent(),
+			MOVE_TO_STORAGE_WOOD_ACTION.instantiate_for_agent(),
 			DEPOSIT_WOOD_ACTION.instantiate_for_agent(),
 			WANDER_ACTION.instantiate_for_agent(),
 		]

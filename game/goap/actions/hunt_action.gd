@@ -13,14 +13,22 @@ extends GoapAction
 ## AiBlackboardComponent.target_entity - fully destroyed via
 ## Game.despawn_entity() rather than left inert, unlike EatPlantAction's
 ## plants (an animal doesn't "regrow").
+##
+## The target's own PathFollowComponent is locked for the hunt's duration
+## (see PathFollowSystem): without this, the animal's independent GOAP agent
+## keeps wandering while being hunted, and since the "at_animal" precondition
+## is re-checked every tick against its live position, it walks back out of
+## arrive_radius well before hunt_duration elapses - the hunt gets
+## abandoned/replanned before it can ever finish.
 
 @export var quarry_name: String = "Animal"
 @export var hunt_duration: float = 1.0
 
 var _elapsed: float = 0.0
 
-func start(_agent_owner: Variant) -> void:
+func start(agent_owner: Variant) -> void:
 	_elapsed = 0.0
+	_set_target_locked(agent_owner, true)
 
 func is_ready(agent_owner: Variant) -> bool:
 	var world: ECSWorld = Game.ecs_world
@@ -43,3 +51,15 @@ func perform(agent_owner: Variant, delta: float) -> int:
 	var inv: InventoryComponent = world.get_component(agent_owner, Game.INVENTORY_TYPE)
 	inv.add(produces_resource.id, yield_amount)
 	return Status.SUCCESS
+
+func stop(agent_owner: Variant) -> void:
+	_set_target_locked(agent_owner, false)
+
+func _set_target_locked(agent_owner: Variant, locked: bool) -> void:
+	var world: ECSWorld = Game.ecs_world
+	var board: AiBlackboardComponent = world.get_component(agent_owner, Game.AI_BLACKBOARD_TYPE)
+	if board.target_entity == -1 or not world.is_alive(board.target_entity):
+		return
+	if not world.has_component(board.target_entity, Game.PATH_FOLLOW_TYPE):
+		return
+	(world.get_component(board.target_entity, Game.PATH_FOLLOW_TYPE) as PathFollowComponent).locked = locked
