@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="WanderAction" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/goap/actions/wander_action.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+action_name = "wander"
+cost = 1.0
+preconditions = {}
+effects = {}
+bounds = Rect2(40, 40, 560, 560)
+wander_fact = "wandered"

@@ -3,6 +3,11 @@ extends Node
 ## Autoload "Game". The one place in the project allowed to know about the
 ## ecs, goap, and pathfinding addons at the same time - none of the three
 ## addons reference this script or each other.
+##
+## Beyond wiring, this is also where "dynamic GOAP target" resolution lives:
+## MoveToNearestAction asks find_nearest() for the closest live entity
+## matching a tag (&"sawmill", &"storage", &"animal", &"plant") instead of
+## any addon knowing what those tags mean.
 
 var ecs_world: ECSWorld
 var pathfinding_service: PathfindingService
@@ -11,9 +16,16 @@ var POSITION_TYPE: int = -1
 var PATH_FOLLOW_TYPE: int = -1
 var GOAP_AGENT_TYPE: int = -1
 var NODE_REF_TYPE: int = -1
+var INVENTORY_TYPE: int = -1
+var ANIMAL_TYPE: int = -1
+var PLANT_TYPE: int = -1
+var BUILDING_TYPE: int = -1
+var STORAGE_TYPE: int = -1
+var AI_BLACKBOARD_TYPE: int = -1
+var SETTLER_ROLE_TYPE: int = -1
 
-const WOODPILE_POS := Vector2(520, 120)
-const LANDMARK_POS := Vector2(120, 520)
+## How close (px) an agent must be to a resolved target to count as "at" it -
+## kept in sync with MoveToNearestAction's own @export arrive_radius default.
 const ARRIVE_RADIUS := 20.0
 
 const WOOD_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resources/wood.tres")
@@ -22,14 +34,109 @@ const MEAT_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resou
 ## Builds a fresh GoapWorldState from live ECS component data for one entity.
 ## This is the adapter step that turns ECS state into the plain Dictionary
 ## the GOAP addon reasons over - the GOAP addon never does this itself.
+## Generic across every kind of GOAP agent (settler or animal): the
+## "at_<target>" fact comes from whatever AiBlackboardComponent.target_fact
+## the entity's currently-running MoveToNearestAction last set, and resource
+## facts come from InventoryComponent when the entity carries one.
 func build_world_state(world: ECSWorld, entity: int) -> GoapWorldState:
-	var pos_comp: PositionComponent = world.get_component(entity, POSITION_TYPE)
-	var goap_comp: GoapAgentComponent = world.get_component(entity, GOAP_AGENT_TYPE)
 	var state := GoapWorldState.new()
-	state.facts = {
-		"at_woodpile": pos_comp.pos.distance_to(WOODPILE_POS) < ARRIVE_RADIUS,
-		"at_landmark": pos_comp.pos.distance_to(LANDMARK_POS) < ARRIVE_RADIUS,
-		WOOD_RESOURCE.fact_key(): goap_comp.inventory_wood > 0,
-		MEAT_RESOURCE.fact_key(): goap_comp.inventory_meat > 0,
-	}
+
+	if world.has_component(entity, AI_BLACKBOARD_TYPE):
+		var board: AiBlackboardComponent = world.get_component(entity, AI_BLACKBOARD_TYPE)
+		if board.target_entity != -1 and board.target_fact != "":
+			var pos_comp: PositionComponent = world.get_component(entity, POSITION_TYPE)
+			var target_alive := is_valid_target(world, board.target_entity, board.target_tag)
+			var at_target := target_alive and pos_comp.pos.distance_to(get_entity_position(world, board.target_entity)) < ARRIVE_RADIUS
+			state.facts[board.target_fact] = at_target
+
+	if world.has_component(entity, INVENTORY_TYPE):
+		var inv: InventoryComponent = world.get_component(entity, INVENTORY_TYPE)
+		state.facts[WOOD_RESOURCE.fact_key()] = inv.get_amount(WOOD_RESOURCE.id) > 0
+		state.facts[MEAT_RESOURCE.fact_key()] = inv.get_amount(MEAT_RESOURCE.id) > 0
+
 	return state
+
+func get_entity_position(world: ECSWorld, entity: int) -> Vector2:
+	if not world.has_component(entity, POSITION_TYPE):
+		return Vector2.INF
+	return (world.get_component(entity, POSITION_TYPE) as PositionComponent).pos
+
+## True while `entity` still exists and, for tags whose targets can go inert
+## without being destroyed (a plant that's been eaten and is regrowing),
+## still counts as usable.
+func is_valid_target(world: ECSWorld, entity: int, tag: StringName) -> bool:
+	if entity == -1 or not world.is_alive(entity):
+		return false
+	if tag == &"plant":
+		return (world.get_component(entity, PLANT_TYPE) as PlantComponent).alive
+	return true
+
+## Finds the closest entity matching `tag` to `from_pos`, or -1 if none
+## exists. Called both by MoveToNearestAction (during planning validity
+## checks and at execution time) and by goals (HungerGoal) that need to know
+## whether a target exists at all before committing to a plan for it.
+func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName) -> int:
+	var buf: Array[int] = []
+	var best := -1
+	var best_dist := INF
+	match tag:
+		&"sawmill":
+			world.query_into([BUILDING_TYPE], buf)
+			for e in buf:
+				if (world.get_component(e, BUILDING_TYPE) as BuildingComponent).kind != &"sawmill":
+					continue
+				var d := from_pos.distance_squared_to(get_entity_position(world, e))
+				if d < best_dist:
+					best_dist = d
+					best = e
+		&"storage":
+			world.query_into([STORAGE_TYPE], buf)
+			for e in buf:
+				if (world.get_component(e, STORAGE_TYPE) as StorageComponent).is_full():
+					continue
+				var d := from_pos.distance_squared_to(get_entity_position(world, e))
+				if d < best_dist:
+					best_dist = d
+					best = e
+		&"animal":
+			world.query_into([ANIMAL_TYPE], buf)
+			for e in buf:
+				var d := from_pos.distance_squared_to(get_entity_position(world, e))
+				if d < best_dist:
+					best_dist = d
+					best = e
+		&"plant":
+			world.query_into([PLANT_TYPE], buf)
+			for e in buf:
+				if not (world.get_component(e, PLANT_TYPE) as PlantComponent).alive:
+					continue
+				var d := from_pos.distance_squared_to(get_entity_position(world, e))
+				if d < best_dist:
+					best_dist = d
+					best = e
+	return best
+
+## True once no StorageComponent in the world has free space left (or there
+## are none at all) - see game/goap/goals/deliver_resource_goal.gd.
+func all_storages_full(world: ECSWorld) -> bool:
+	var buf: Array[int] = []
+	world.query_into([STORAGE_TYPE], buf)
+	if buf.is_empty():
+		return true
+	for e in buf:
+		if not (world.get_component(e, STORAGE_TYPE) as StorageComponent).is_full():
+			return false
+	return true
+
+## Single despawn path for both game logic (HuntAction killing its quarry)
+## and the dev panel's remove tool: frees the entity's visual node (if any)
+## before destroying the ECS entity, so no orphaned Sprite2D/Label is left
+## behind in the scene tree.
+func despawn_entity(world: ECSWorld, entity: int) -> void:
+	if not world.is_alive(entity):
+		return
+	if world.has_component(entity, NODE_REF_TYPE):
+		var node_ref: NodeRefComponent = world.get_component(entity, NODE_REF_TYPE)
+		if is_instance_valid(node_ref.node):
+			node_ref.node.queue_free()
+	world.destroy_entity(entity)

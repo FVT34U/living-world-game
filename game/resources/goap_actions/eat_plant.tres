@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EatPlantAction" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/goap/actions/eat_plant_action.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+action_name = "eat_plant"
+cost = 1.0
+preconditions = {
+"at_plant": true
+}
+effects = {
+"ate": true
+}
+eat_duration = 0.6
+regrow_time = 12.0

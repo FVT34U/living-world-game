@@ -19,39 +19,66 @@ GOAP needs *something* to plan for and act on, but it never assumes that thing i
 
 The cost of this independence is that *someone* has to bridge them for an actual game — that someone is `res://game/`.
 
+## The simulation
+
+The demo (`world_bootstrap.gd`) runs a small living settlement:
+
+- **Woodcutters** walk to the sawmill, chop wood, carry it to a storage building, and repeat.
+- **Hunters** stalk the nearest live boar or deer, kill it for meat, carry it to storage, and repeat.
+- **Boars and deer** wander the map and, once hungry enough, seek out and eat the nearest plant.
+- **Plants** go inert once eaten and regrow after a cooldown.
+- **Storage buildings** hold a combined wood+meat capacity; once every storage is full, settlers stop delivering and wander instead; storages also slowly drain over time (population "consumption"), so the cycle never just tops out and stops.
+- A **dev panel** (F1) can spawn or remove any settler, animal, plant, or building at a clicked position at runtime.
+
+Settlers and animals are both plain GOAP agents (`GoapAgentComponent`) - the only difference is which goals/actions `EntityFactory` gives them. This is the same generic addon trio from before; nothing in `addons/` changed to support any of this.
+
 ## Data flow for one NPC tick
 
 1. `GoapPlanningSystem` (ECS system, priority 0) queries every entity with a `GoapAgentComponent`, and — budgeted to a fixed number per frame — for each one:
-   - Calls `Game.build_world_state(world, entity)`, which reads live ECS components (`PositionComponent`, `GoapAgentComponent`) and produces a plain `GoapWorldState` (a `Dictionary` of facts like `at_woodpile`, `has_resource:wood`). This is the ECS → GOAP adapter step.
+   - Calls `Game.build_world_state(world, entity)`, which reads live ECS components and produces a plain `GoapWorldState` (a `Dictionary` of facts). This is the ECS → GOAP adapter step. It is generic across settlers and animals: the one positional fact it emits (`"at_<target>"`) comes from whatever `AiBlackboardComponent.target_fact` the entity's last `MoveToNearestAction` published, and resource facts (`has_resource:wood`/`has_resource:meat`) come from `InventoryComponent` when present.
    - Calls `GoapAgentComponent.agent.tick(entity, state, delta)`, which (re)selects a goal if needed, (re)plans via `GoapPlanner.plan()` if needed, and calls `perform()` on the current action.
-2. If the current action is a `MoveToAction` (`game/goap/actions/move_to_action.gd`), `perform()` reads the entity's `PositionComponent` and calls `Game.pathfinding_service.request_path(from, to, callback)`. This is the GOAP → Pathfinding adapter step. The callback stores the resulting path into the entity's `PathFollowComponent`.
+2. `MoveToNearestAction` (`game/goap/actions/move_to_nearest_action.gd`) is the GOAP → Pathfinding adapter step, generalized beyond a single fixed waypoint: given a `target_tag` (`&"sawmill"`, `&"storage"`, `&"animal"`, `&"plant"`), it asks `Game.find_nearest()` for the closest live matching entity, stores it in the agent's `AiBlackboardComponent`, and calls `Game.pathfinding_service.request_path(...)`, re-requesting a path if the target has since moved (so it can chase a wandering animal). The callback stores the resulting path into the entity's `PathFollowComponent`.
 3. `PathFollowSystem` (ECS system, priority 10) advances every entity's `PositionComponent` along its `PathFollowComponent.path` each frame, marking `arrived = true` on reaching the end. This is pure ECS, unaware of GOAP or pathfinding beyond the plain array sitting in the component.
-4. Once `arrived` is true, `MoveToAction.perform()` (next time it's called) returns `SUCCESS`, and `GoapAgent` advances to the next action in the plan (e.g. `ChopWoodAction`/`HuntAction`, which increment demo "inventory" fields after a short delay).
-5. `RenderSyncSystem` (ECS system, priority 20) copies `PositionComponent.pos` into the entity's linked `Sprite2D.global_position` every frame, so the plan's effect on ECS data is visible on screen.
+4. Once at the target, the next action in the plan runs against whatever `AiBlackboardComponent.target_entity` `MoveToNearestAction` resolved: `ChopWoodAction`/`HuntAction` produce a resource into `InventoryComponent` (`HuntAction` also fully despawns its quarry via `Game.despawn_entity()`); `EatPlantAction` marks its plant inert and resets the eater's hunger; `DepositResourceAction` empties the carrier's `InventoryComponent` into the targeted `StorageComponent`.
+5. `RenderSyncSystem` (ECS system, priority 20) copies `PositionComponent.pos` into the entity's linked `Sprite2D.global_position` every frame. `StatusLabelSystem`/`StorageLabelSystem` (priority 21/22) keep each entity's status label and each storage's stock label in sync, so the plan's effect on ECS data is visible on screen at every step, not just position.
+
+## The gather → deliver loop, without any addon changes
+
+`DepositResourceAction`'s effect (and `WanderAction`'s, and `EatPlantAction`'s "ate" effect) sets a fact — `delivered_wood`, `delivered_meat`, `wandered`, `ate` — that `Game.build_world_state()` never writes into the live rebuilt state. That means the corresponding goal (`deliver_wood_goal`, `deliver_meat_goal`, `wander_goal`, `hunger_goal`) is *always* unsatisfied at the start of a fresh planning tick, so `GoapPlanner.plan()` always re-derives the full action chain (e.g. `move_to_sawmill → chop_wood → move_to_storage → deposit_wood`) once its goal is (re-)selected. Combined with `GoapAgent.tick()` already replanning immediately once a plan completes, this gives an infinite gather/eat/wander loop for free, using nothing but the existing forward-search planner and the existing `preconditions`/`effects`/`requires_resource`/`produces_resource` fields.
 
 ## Data-driven goals and actions
 
 `GoapGoal` and `GoapAction` are Godot `Resource`s, not GDScript objects you build in code. Concretely, in this project:
 
-- `game/resources/goap_resources/*.tres` are `GoapResourceType` assets (`wood`, `meat`) - the abstraction unit a goal or action points at instead of a hand-typed fact string. `GoapResourceType.fact_key()` is the single source of truth for the `GoapWorldState` key (`"has_resource:wood"`), used identically by `Game.build_world_state()` and by any action's `produces_resource`/`requires_resource`.
-- `game/resources/goap_actions/*.tres` are configured instances of `MoveToAction`/`ChopWoodAction`/`HuntAction` - e.g. `hunt_boar.tres` and `hunt_deer.tres` both use `hunt_action.gd` but with different `quarry_name`/`hunt_duration`/`cost`, so the planner naturally prefers deer (cheaper) when either would satisfy the same `meat` goal. This is the "one script, many parametrized instances" pattern instead of a subclass per variant.
-- `game/resources/goap_goals/*.tres` are `GoapGoal`/`GoapCompositeGoal` instances - `gather_wood_goal.tres`/`gather_meat_goal.tres` are plain leaf goals (`target_resource` set, no subclass needed at all), and `prepare_for_winter_goal.tres` (`mode = ALL`)/`forage_anything_goal.tres` (`mode = ANY`) combine them - see `addons/goap/README.md` for the AND/OR semantics and the `GoapPlanner` alternative-resolution mechanics behind them.
-- `game/entity_factory.gd` `preload()`s these templates and `duplicate(true)`s each one per spawned NPC before use - loaded `.tres` Resources are shared/cached objects, so any per-agent mutation (action runtime state, per-NPC goal priority) needs its own copy. See the "Shared Resources need per-agent duplication" section of `addons/goap/README.md`.
-- The **Goal Graph Editor** (`addons/goap/editor/`, bottom panel "Goal Graph" once the GOAP plugin is enabled) lets you build/wire/save this kind of goal tree visually instead of hand-editing `.tres` text - point it at `res://game/resources/goap_goals/` to see this project's goals as a graph.
+- `game/resources/goap_resources/*.tres` are `GoapResourceType` assets (`wood`, `meat`) - the abstraction unit an action's `requires_resource`/`produces_resource` points at instead of a hand-typed fact string.
+- `game/resources/goap_actions/*.tres` are configured instances of the action scripts under `game/goap/actions/`:
+  - `move_to_sawmill.tres` / `move_to_storage.tres` / `move_to_animal.tres` / `move_to_plant.tres` all use `move_to_nearest_action.gd`, differing only in `target_tag`/`target_fact`.
+  - `chop_wood.tres` uses `chop_wood_action.gd`; `hunt_boar.tres`/`hunt_deer.tres` both use `hunt_action.gd` with different `hunt_duration`/`cost`/`quarry_name`, so the planner naturally prefers deer (cheaper) when either would satisfy the same `meat` goal.
+  - `deposit_wood.tres`/`deposit_meat.tres` both use `deposit_resource_action.gd`, differing only in `requires_resource`/`delivered_fact`.
+  - `eat_plant.tres` uses `eat_plant_action.gd`; `wander.tres` uses `wander_action.gd` and is shared by every settler and animal.
+- `game/resources/goap_goals/*.tres` are `GoapGoal` instances: `deliver_wood_goal.tres`/`deliver_meat_goal.tres` use the game-specific `DeliverResourceGoal` subclass (`game/goap/goals/deliver_resource_goal.gd`, invalid once every storage is full); `hunger_goal.tres` uses `HungerGoal` (`game/goap/goals/hunger_goal.gd`, valid once hunger crosses a threshold and a plant exists, with priority that rises with hunger); `wander_goal.tres` is a plain leaf `GoapGoal` shared by every agent as the always-valid fallback.
+- `game/entity_factory.gd` `preload()`s these templates and calls `instantiate_for_agent()` (`.duplicate(true)`) on each **action** per spawned entity before use - loaded `.tres` actions carry runtime-mutable state (elapsed timers, in-flight path requests), so any per-agent mutation needs its own copy (see the "Shared Resources need per-agent duplication" section of `addons/goap/README.md`). Goals are stateless here, so they're shared directly without duplication.
 
 ## Where to extend
 
-- **New GOAP action**: write a `GoapAction` subclass under `game/goap/actions/` with `@export` parameters instead of constructor args, then create one or more `.tres` instances of it (New Resource in the FileSystem dock, or hand-author a `.tres` like the ones under `game/resources/goap_actions/`) with `preconditions`/`effects`/`requires_resource`/`produces_resource` set per instance.
-- **New GOAP goal**: usually no subclass needed - create a `GoapGoal` (leaf) or `GoapCompositeGoal` (AND/OR of other goals) `.tres` asset directly, via New Resource or the Goal Graph Editor. Only subclass `GoapGoal` for dynamic `get_priority()`/`is_valid()` logic.
-- **New abstract resource**: create a `GoapResourceType` `.tres` (id + display name), point any action's `produces_resource`/`requires_resource` and any goal's `target_resource` at it.
+- **New GOAP action**: write a `GoapAction` subclass under `game/goap/actions/` with `@export` parameters instead of constructor args, then create one or more `.tres` instances of it with `preconditions`/`effects`/`requires_resource`/`produces_resource` set per instance.
+- **New GOAP goal**: usually no subclass needed - create a `GoapGoal` (leaf) or `GoapCompositeGoal` (AND/OR of other goals) `.tres` asset directly. Only subclass `GoapGoal` for dynamic `get_priority()`/`is_valid()` logic, as `DeliverResourceGoal`/`HungerGoal` do here.
+- **New dynamic target tag**: add a case to `Game.find_nearest()` (and, if the target can go inert without being destroyed like a plant, to `Game.is_valid_target()`), then point a `move_to_nearest_action.gd` `.tres` instance's `target_tag` at it.
+- **New abstract resource**: create a `GoapResourceType` `.tres` (id + display name), point any action's `produces_resource`/`requires_resource` at it, and add a case to `StorageConsumptionSystem` if it should also drain from storage over time.
 - **New component type**: add a plain `RefCounted` class under `game/components/`, register it once via `world.register_component(...)` in `world_bootstrap.gd`, cache the returned id on `Game`.
-- **New ECS system**: subclass `System` under `game/systems/`, give it a `priority` reflecting where it should run relative to the existing three, add it via `world.add_system(...)`.
-- **Swapping pathfinding for a 3D project**: keep using the `goap` and `ecs` addons unmodified; implement a `PathfindingProvider3D` (Vector3/Vector3i) in a new `pathfinding_3d` addon mirroring `PathfindingProvider`'s method shape, and write a new `MoveToAction`-style adapter for that project.
+- **New ECS system**: subclass `System` under `game/systems/`, give it a `priority` reflecting where it should run relative to the existing ones, add it via `world.add_system(...)`.
+- **New spawnable kind**: add a `spawn_*` function to `game/entity_factory.gd`, then wire it into `game/ui/dev_panel.gd`'s `SPAWNABLE` list and `_spawn_at()` match so the dev panel can place it too.
+- **Swapping pathfinding for a 3D project**: keep using the `goap` and `ecs` addons unmodified; implement a `PathfindingProvider3D` (Vector3/Vector3i) in a new `pathfinding_3d` addon mirroring `PathfindingProvider`'s method shape, and write a new `MoveToNearestAction`-style adapter for that project.
+
+## The dev panel
+
+`game/ui/dev_panel.gd` is a `CanvasLayer` built entirely in code (no separate scene), toggled with F1. It never touches ECS/GOAP state directly - every add/remove goes through `EntityFactory.spawn_*()` or `Game.despawn_entity()`, the same entry points the normal bootstrap and in-game actions use, so the dev panel can't desync from the simulation. "Add" arms a pending kind and places it on the next map click; "Remove mode" instead deletes whatever entity is nearest the next click, within a fixed pixel radius.
 
 ## Performance mitigations already in place
 
 - ECS: sparse-set component storage (O(1) add/remove/lookup, packed iteration), int type-ids instead of string keys, caller-owned query buffers (no per-frame Array allocation).
 - GOAP: forward A* with a hard expansion cap per plan attempt, shared across every alternative a composite `ALL`/`ANY` goal resolves into (itself capped by `GoapCompositeGoal.MAX_ALTERNATIVES`); per-frame planning budget (`GoapPlanningSystem`, round-robin) instead of ticking every agent every frame; staggered goal-recheck timers so agents don't all replan on the same frame.
 - Pathfinding: frame-budgeted async request queue (`PathfindingService`) instead of resolving every path request synchronously in one frame.
+- Dynamic target resolution (`Game.find_nearest`) is a linear scan over one component storage, which only runs at plan-time (replans, not every frame) and stays cheap at this project's entity counts; if NPC/animal counts grow much larger, this is the first place to add spatial partitioning.
 
 See each addon's `README.md` for addon-specific usage and performance notes.
