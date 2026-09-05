@@ -20,6 +20,11 @@ extends GoapAction
 ## tick against its live position, it walks back out of arrive_radius well
 ## before hunt_duration elapses - the hunt gets abandoned/replanned before
 ## it can ever finish.
+##
+## Also backs off a target that is (or becomes) too young or engaged in
+## mating (see Game.is_animal_protected()) - find_nearest(tag=&"animal")
+## already excludes such animals when picking a *new* target, but this
+## re-check covers one already locked onto starting to mate mid-chase.
 
 @export var quarry_name: String = "Animal"
 @export var hunt_duration: float = 1.0
@@ -35,7 +40,8 @@ func start(agent_owner: Variant) -> void:
 func is_ready(agent_owner: Variant) -> bool:
 	var world: ECSWorld = Game.ecs_world
 	var board: AiBlackboardComponent = world.get_component(agent_owner, Game.AI_BLACKBOARD_TYPE)
-	return Game.is_valid_target(world, board.target_entity, &"animal")
+	return Game.is_valid_target(world, board.target_entity, &"animal") \
+		and not Game.is_animal_protected(world, board.target_entity)
 
 func perform(agent_owner: Variant, delta: float) -> int:
 	_elapsed += delta
@@ -43,7 +49,8 @@ func perform(agent_owner: Variant, delta: float) -> int:
 		return Status.RUNNING
 	var world: ECSWorld = Game.ecs_world
 	var board: AiBlackboardComponent = world.get_component(agent_owner, Game.AI_BLACKBOARD_TYPE)
-	if not Game.is_valid_target(world, board.target_entity, &"animal"):
+	if not Game.is_valid_target(world, board.target_entity, &"animal") \
+		or Game.is_animal_protected(world, board.target_entity):
 		return Status.FAILED
 
 	var animal: AnimalComponent = world.get_component(board.target_entity, Game.ANIMAL_TYPE)

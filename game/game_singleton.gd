@@ -135,8 +135,15 @@ func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName, requester
 					best_dist = d
 					best = e
 		&"animal":
+			# This tag is only ever used to find a hunt target (see
+			# move_to_animal.tres), so it excludes animals off-limits to
+			# hunting - MateAction/HuntAction re-validate an already-locked
+			# target with is_valid_target()/is_animal_protected() directly,
+			# which don't go through this search.
 			world.query_into([ANIMAL_TYPE], buf)
 			for e in buf:
+				if is_animal_protected(world, e):
+					continue
 				var d := from_pos.distance_squared_to(get_entity_position(world, e))
 				if d < best_dist:
 					best_dist = d
@@ -181,6 +188,30 @@ func is_mate_eligible(world: ECSWorld, entity: int) -> bool:
 	var buf: Array[int] = []
 	world.query_into([ANIMAL_TYPE], buf)
 	return buf.size() < MAX_ANIMAL_POPULATION
+
+## True if `entity` should be off-limits to hunting: too young
+## (AnimalComponent.is_juvenile, still short of its maturation delay - see
+## AnimalNeedsSystem) or actively engaged in mating, whether still
+## approaching a partner (current action is MoveToNearestAction targeting
+## &"mate") or already mating (current action is MateAction). Deliberately
+## separate from is_valid_target()'s generic &"animal" check - MateAction
+## itself calls that same check on its own partner, who is by definition
+## "protected", so folding this in there would make a mating pair see each
+## other as invalid and break mating instead of hunting.
+func is_animal_protected(world: ECSWorld, entity: int) -> bool:
+	if not world.has_component(entity, ANIMAL_TYPE):
+		return true
+	if (world.get_component(entity, ANIMAL_TYPE) as AnimalComponent).is_juvenile:
+		return true
+	if not world.has_component(entity, GOAP_AGENT_TYPE):
+		return false
+	var agent: GoapAgent = (world.get_component(entity, GOAP_AGENT_TYPE) as GoapAgentComponent).agent
+	if agent.current_action_index < 0 or agent.current_action_index >= agent.current_plan.size():
+		return false
+	var step: GoapAction = agent.current_plan[agent.current_action_index]
+	if step is MateAction:
+		return true
+	return step is MoveToNearestAction and (step as MoveToNearestAction).target_tag == &"mate"
 
 ## Locks/unlocks an entity's own movement (see PathFollowComponent.locked) -
 ## used by any action whose target needs to stay put for the action's
