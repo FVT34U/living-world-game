@@ -26,7 +26,7 @@ window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/ecs/plugin.cfg", "res://addons/goap/plugin.cfg", "res://addons/pathfinding/plugin.cfg")
+enabled=PackedStringArray("res://addons/ecs/plugin.cfg", "res://addons/goap/plugin.cfg", "res://addons/pathfinding/plugin.cfg", "res://addons/attributes/plugin.cfg")
 
 [physics]
 

@@ -29,21 +29,33 @@ var BUILDING_TYPE: int = -1
 var STORAGE_TYPE: int = -1
 var AI_BLACKBOARD_TYPE: int = -1
 var SETTLER_ROLE_TYPE: int = -1
+var ATTRIBUTES_TYPE: int = -1
 
 ## How close (px) an agent must be to a resolved target to count as "at" it -
 ## kept in sync with MoveToNearestAction's own @export arrive_radius default.
 const ARRIVE_RADIUS := 20.0
 
-## An animal counts as "well-fed enough to mate" below this - well under
-## HungerGoal's default 0.5 activation threshold, so the two goals'
-## validity windows don't overlap (see MateGoal).
-const MATE_HUNGER_THRESHOLD := 0.3
+## An animal counts as "well-fed enough to mate" at or above this Satiety
+## value - comfortably above HungerGoal's own (lower) satiety_threshold, so
+## the two goals' validity windows don't overlap (see MateGoal).
+const MATE_SATIETY_THRESHOLD := 70.0
 ## Hard cap on total animals: past this, is_mate_eligible() always returns
 ## false, so reproduction can't grow the population unboundedly.
 const MAX_ANIMAL_POPULATION := 24
 
 const WOOD_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resources/wood.tres")
 const MEAT_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resources/meat.tres")
+
+## The addons/attributes AttributeType resources every settler/animal is
+## registered with - see EntityFactory._add_attributes(). Game-domain
+## meaning (what reads/writes each one) lives entirely here and in
+## game/systems/attribute_consequence_system.gd; the addon itself has no
+## idea what "satiety" or "health" means.
+const SATIETY_ATTR: AttributeType = preload("res://game/resources/attributes/satiety.tres")
+const ENERGY_ATTR: AttributeType = preload("res://game/resources/attributes/energy.tres")
+const HEALTH_ATTR: AttributeType = preload("res://game/resources/attributes/health.tres")
+const HAPPINESS_ATTR: AttributeType = preload("res://game/resources/attributes/happiness.tres")
+const AGE_ATTR: AttributeType = preload("res://game/resources/attributes/age.tres")
 
 ## Builds a fresh GoapWorldState from live ECS component data for one entity.
 ## This is the adapter step that turns ECS state into the plain Dictionary
@@ -174,16 +186,19 @@ func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName, requester
 					best = e
 	return best
 
-## True while `entity` is a living animal that is well-fed (hunger below
-## MATE_HUNGER_THRESHOLD), off its own mate cooldown, and the total animal
-## population is still under MAX_ANIMAL_POPULATION. Used both to filter
-## find_nearest(tag=&"mate") candidates and by MateGoal/MateAction to gate
-## the actor itself.
+## True while `entity` is a living animal that is well-fed (Satiety at or
+## above MATE_SATIETY_THRESHOLD), off its own mate cooldown, and the total
+## animal population is still under MAX_ANIMAL_POPULATION. Used both to
+## filter find_nearest(tag=&"mate") candidates and by MateGoal/MateAction to
+## gate the actor itself.
 func is_mate_eligible(world: ECSWorld, entity: int) -> bool:
-	if not world.has_component(entity, ANIMAL_TYPE):
+	if not world.has_component(entity, ANIMAL_TYPE) or not world.has_component(entity, ATTRIBUTES_TYPE):
 		return false
 	var animal: AnimalComponent = world.get_component(entity, ANIMAL_TYPE)
-	if animal.hunger >= MATE_HUNGER_THRESHOLD or animal.mate_cooldown > 0.0:
+	if animal.mate_cooldown > 0.0:
+		return false
+	var attrs: AttributeSet = world.get_component(entity, ATTRIBUTES_TYPE)
+	if attrs.get_value(SATIETY_ATTR) < MATE_SATIETY_THRESHOLD:
 		return false
 	var buf: Array[int] = []
 	world.query_into([ANIMAL_TYPE], buf)

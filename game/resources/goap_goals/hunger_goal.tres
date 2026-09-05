@@ -6,5 +6,5 @@
 script = ExtResource("1")
 goal_name = "hunger"
 priority = 0.5
-hunger_threshold = 0.5
+satiety_threshold = 50.0
 desired_fact = "ate"

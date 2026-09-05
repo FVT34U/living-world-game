@@ -20,13 +20,15 @@ extends GoapAction
 ## On success, spawns one - rarely two (twin_chance) - offspring of the same
 ## species near the pair, each starting with its own maturation cooldown so
 ## it can't immediately mate itself. Needs a scene-tree parent to attach the
-## new Sprite2D to (Game.world_root, set once by world_bootstrap.gd).
+## new Sprite2D to (Game.world_root, set once by world_bootstrap.gd). Costs
+## both participants a bit of Energy (addons/attributes) on success.
 
 @export var mate_duration: float = 1.5
 @export var cooldown: float = 25.0
 @export var offspring_maturation: float = 20.0
 @export var twin_chance: float = 0.15
 @export var spawn_scatter: float = 24.0
+@export var energy_cost: float = 10.0
 
 var _elapsed: float = 0.0
 
@@ -59,6 +61,11 @@ func perform(agent_owner: Variant, delta: float) -> int:
 	var partner_animal: AnimalComponent = world.get_component(partner, Game.ANIMAL_TYPE)
 	self_animal.mate_cooldown = cooldown
 	partner_animal.mate_cooldown = cooldown
+
+	if world.has_component(agent_owner, Game.ATTRIBUTES_TYPE):
+		(world.get_component(agent_owner, Game.ATTRIBUTES_TYPE) as AttributeSet).add_value(Game.ENERGY_ATTR, -energy_cost)
+	if world.has_component(partner, Game.ATTRIBUTES_TYPE):
+		(world.get_component(partner, Game.ATTRIBUTES_TYPE) as AttributeSet).add_value(Game.ENERGY_ATTR, -energy_cost)
 
 	var spawn_center := (Game.get_entity_position(world, agent_owner) + Game.get_entity_position(world, partner)) / 2.0
 	var litter := 2 if randf() < twin_chance else 1

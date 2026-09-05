@@ -14,3 +14,4 @@ effects = {}
 produces_resource = ExtResource("2")
 quarry_name = "Deer"
 hunt_duration = 0.8
+energy_cost = 12.0

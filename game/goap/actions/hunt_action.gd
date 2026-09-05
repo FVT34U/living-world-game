@@ -25,9 +25,13 @@ extends GoapAction
 ## mating (see Game.is_animal_protected()) - find_nearest(tag=&"animal")
 ## already excludes such animals when picking a *new* target, but this
 ## re-check covers one already locked onto starting to mate mid-chase.
+##
+## Costs the hunter a bit of Energy (addons/attributes) on success - the
+## quarry itself is destroyed, so only the hunter's own attributes matter.
 
 @export var quarry_name: String = "Animal"
 @export var hunt_duration: float = 1.0
+@export var energy_cost: float = 15.0
 
 var _elapsed: float = 0.0
 
@@ -59,6 +63,8 @@ func perform(agent_owner: Variant, delta: float) -> int:
 
 	var inv: InventoryComponent = world.get_component(agent_owner, Game.INVENTORY_TYPE)
 	inv.add(produces_resource.id, yield_amount)
+	if world.has_component(agent_owner, Game.ATTRIBUTES_TYPE):
+		(world.get_component(agent_owner, Game.ATTRIBUTES_TYPE) as AttributeSet).add_value(Game.ENERGY_ATTR, -energy_cost)
 	return Status.SUCCESS
 
 func stop(agent_owner: Variant) -> void:
