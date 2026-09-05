@@ -12,8 +12,8 @@ extends Node2D
 @export var GRID_SIZE := 40
 @export var CELL_SIZE := Vector2(16, 16)
 @export var NPC_COUNT := 6
-@export var BOAR_COUNT := 3
-@export var DEER_COUNT := 3
+@export var BOAR_COUNT := 6
+@export var DEER_COUNT := 6
 @export var PLANT_COUNT := 16
 @export var SPAWN_POS := Vector2(300, 340)
 @export var STORAGE_POS := Vector2(300, 80)
@@ -23,6 +23,7 @@ func _ready() -> void:
 	var world := ECSWorld.new()
 	add_child(world)
 	Game.ecs_world = world
+	Game.world_root = self
 
 	Game.POSITION_TYPE = world.register_component(PositionComponent)
 	Game.PATH_FOLLOW_TYPE = world.register_component(PathFollowComponent)
@@ -72,7 +73,12 @@ func _ready() -> void:
 		EntityFactory.spawn_animal(world, self, _random_point(), &"deer")
 
 	for i in NPC_COUNT:
-		var role: StringName = &"woodcutter" if i % 2 == 0 else &"hunter"
+		# Only one hunter rather than half the settlers: with mating now the
+		# only source of new animals (see MateGoal/MateAction), too much
+		# hunting pressure relative to the starting population reliably wipes
+		# every same-species pair out before a single litter has time to
+		# complete - same-species pairing makes small populations fragile.
+		var role: StringName = &"hunter" if i == 0 else &"woodcutter"
 		EntityFactory.spawn_settler(world, self, SPAWN_POS + Vector2(i * 20, 0), role)
 
 	var dev_panel := DevPanel.new()

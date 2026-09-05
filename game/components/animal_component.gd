@@ -13,3 +13,9 @@ var meat_yield: int = 1
 ## priority makes eating outweigh idle wandering; reset to 0 on a successful
 ## EatPlantAction.
 var hunger: float = 0.0
+
+## Counts down over time (see AnimalNeedsSystem); must be <= 0 to be
+## eligible to mate (see Game.is_mate_eligible()). Set to a cooldown after a
+## successful MateAction, and to a longer "maturation" delay on a newborn
+## (see MateAction) so population growth stays gradual.
+var mate_cooldown: float = 0.0

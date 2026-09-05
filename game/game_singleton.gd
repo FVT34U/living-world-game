@@ -12,6 +12,12 @@ extends Node
 var ecs_world: ECSWorld
 var pathfinding_service: PathfindingService
 
+## The Node2D new entities' Sprite2D visuals get parented under - set once by
+## world_bootstrap.gd. Needed by actions that spawn new entities themselves
+## at runtime (MateAction) rather than only at bootstrap/from the dev panel,
+## both of which already have a parent Node2D in scope directly.
+var world_root: Node2D
+
 var POSITION_TYPE: int = -1
 var PATH_FOLLOW_TYPE: int = -1
 var GOAP_AGENT_TYPE: int = -1
@@ -27,6 +33,14 @@ var SETTLER_ROLE_TYPE: int = -1
 ## How close (px) an agent must be to a resolved target to count as "at" it -
 ## kept in sync with MoveToNearestAction's own @export arrive_radius default.
 const ARRIVE_RADIUS := 20.0
+
+## An animal counts as "well-fed enough to mate" below this - well under
+## HungerGoal's default 0.5 activation threshold, so the two goals'
+## validity windows don't overlap (see MateGoal).
+const MATE_HUNGER_THRESHOLD := 0.3
+## Hard cap on total animals: past this, is_mate_eligible() always returns
+## false, so reproduction can't grow the population unboundedly.
+const MAX_ANIMAL_POPULATION := 24
 
 const WOOD_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resources/wood.tres")
 const MEAT_RESOURCE: GoapResourceType = preload("res://game/resources/goap_resources/meat.tres")
@@ -87,13 +101,17 @@ func is_valid_target(world: ECSWorld, entity: int, tag: StringName) -> bool:
 			return world.has_component(entity, ANIMAL_TYPE)
 		&"plant":
 			return world.has_component(entity, PLANT_TYPE) and (world.get_component(entity, PLANT_TYPE) as PlantComponent).alive
+		&"mate":
+			return is_mate_eligible(world, entity)
 	return false
 
 ## Finds the closest entity matching `tag` to `from_pos`, or -1 if none
 ## exists. Called both by MoveToNearestAction (during planning validity
-## checks and at execution time) and by goals (HungerGoal) that need to know
-## whether a target exists at all before committing to a plan for it.
-func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName) -> int:
+## checks and at execution time) and by goals (HungerGoal, MateGoal) that
+## need to know whether a target exists at all before committing to a plan
+## for it. `requester` is only used by tag &"mate" (to exclude self and
+## match species) - every other tag ignores it.
+func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName, requester: int = -1) -> int:
 	var buf: Array[int] = []
 	var best := -1
 	var best_dist := INF
@@ -132,7 +150,45 @@ func find_nearest(world: ECSWorld, from_pos: Vector2, tag: StringName) -> int:
 				if d < best_dist:
 					best_dist = d
 					best = e
+		&"mate":
+			if requester == -1 or not world.has_component(requester, ANIMAL_TYPE):
+				return -1
+			var mine: AnimalComponent = world.get_component(requester, ANIMAL_TYPE)
+			world.query_into([ANIMAL_TYPE], buf)
+			for e in buf:
+				if e == requester:
+					continue
+				var a: AnimalComponent = world.get_component(e, ANIMAL_TYPE)
+				if a.species != mine.species or not is_mate_eligible(world, e):
+					continue
+				var d := from_pos.distance_squared_to(get_entity_position(world, e))
+				if d < best_dist:
+					best_dist = d
+					best = e
 	return best
+
+## True while `entity` is a living animal that is well-fed (hunger below
+## MATE_HUNGER_THRESHOLD), off its own mate cooldown, and the total animal
+## population is still under MAX_ANIMAL_POPULATION. Used both to filter
+## find_nearest(tag=&"mate") candidates and by MateGoal/MateAction to gate
+## the actor itself.
+func is_mate_eligible(world: ECSWorld, entity: int) -> bool:
+	if not world.has_component(entity, ANIMAL_TYPE):
+		return false
+	var animal: AnimalComponent = world.get_component(entity, ANIMAL_TYPE)
+	if animal.hunger >= MATE_HUNGER_THRESHOLD or animal.mate_cooldown > 0.0:
+		return false
+	var buf: Array[int] = []
+	world.query_into([ANIMAL_TYPE], buf)
+	return buf.size() < MAX_ANIMAL_POPULATION
+
+## Locks/unlocks an entity's own movement (see PathFollowComponent.locked) -
+## used by any action whose target needs to stay put for the action's
+## duration instead of wandering off mid-attempt (HuntAction, MateAction).
+func set_locked(world: ECSWorld, entity: int, locked: bool) -> void:
+	if entity == -1 or not world.is_alive(entity) or not world.has_component(entity, PATH_FOLLOW_TYPE):
+		return
+	(world.get_component(entity, PATH_FOLLOW_TYPE) as PathFollowComponent).locked = locked
 
 ## True once no StorageComponent in the world has free space left (or there
 ## are none at all) - see game/goap/goals/deliver_resource_goal.gd.

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="MateAction" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/goap/actions/mate_action.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+action_name = "mate"
+cost = 1.0
+preconditions = {
+"at_mate": true
+}
+effects = {
+"mated": true
+}
+mate_duration = 1.5
+cooldown = 25.0
+offspring_maturation = 20.0
+twin_chance = 0.15
+spawn_scatter = 24.0

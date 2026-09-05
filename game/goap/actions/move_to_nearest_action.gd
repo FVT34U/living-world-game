@@ -47,7 +47,7 @@ func procedural_effects(agent_owner: Variant, state: GoapWorldState) -> Dictiona
 func is_procedurally_valid(agent_owner: Variant, _state: GoapWorldState) -> bool:
 	var world: ECSWorld = Game.ecs_world
 	var pos: PositionComponent = world.get_component(agent_owner, Game.POSITION_TYPE)
-	return Game.find_nearest(world, pos.pos, target_tag) != -1
+	return Game.find_nearest(world, pos.pos, target_tag, agent_owner) != -1
 
 func start(agent_owner: Variant) -> void:
 	_requested = false
@@ -65,7 +65,7 @@ func perform(agent_owner: Variant, _delta: float) -> int:
 	var path_follow: PathFollowComponent = world.get_component(agent_owner, Game.PATH_FOLLOW_TYPE)
 
 	if board.target_entity == -1 or not Game.is_valid_target(world, board.target_entity, target_tag):
-		board.target_entity = Game.find_nearest(world, pos_comp.pos, target_tag)
+		board.target_entity = Game.find_nearest(world, pos_comp.pos, target_tag, agent_owner)
 		if board.target_entity == -1:
 			return Status.FAILED
 		_requested = false
